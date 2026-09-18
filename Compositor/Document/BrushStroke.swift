@@ -756,7 +756,7 @@ final class BrushStroke {
     /// Spot Healing, once the stroke ends: rebuilds the painted area from nearby texture
     /// (`HealPixels.c`) and writes it into the stroke's tiles, so the usual commit applies it as
     /// one undo step. Reads the layer's original pixels, never the dark wash shown while painting.
-    func heal() throws {
+    func heal(maximumWorkingBytes: Int = HealingMemory.maximumBytes) throws {
         guard settings.healing, !isMask else { return }
         var painted: CGRect?
         for (key, context) in coverage {
@@ -775,6 +775,7 @@ final class BrushStroke {
         let region = painted.insetBy(dx: -reach, dy: -reach)
             .intersection(CGRect(x: 0, y: 0, width: width, height: height)).integral
         let w = Int(region.width), h = Int(region.height)
+        try HealingMemory.check(width: w, height: h, maximumBytes: maximumWorkingBytes)
         let pixels = try BrushRaster.context(width: w, height: h, mask: false)
         let placed = sourceRect.offsetBy(dx: -region.minX, dy: -region.minY)
         if let raster = layer.asset?.raster { raster.draw(in: placed, context: pixels) }
