@@ -46,7 +46,7 @@ extension EditorSession {
         let flat = CanvasDocument(id: document.id, width: document.width, height: document.height,
                                   layers: subset, resolution: document.resolution)
         guard let context = try? BrushRaster.context(width: document.width, height: document.height, mask: false) else { return }
-        drawLiveComposite(flat, in: context)
+        guard drawLiveComposite(flat, in: context) else { return }
         let canvas = LayerTransform(origin: .zero, size: CGSize(width: document.width, height: document.height))
         guard let full = context.makeImage(),
               let trimmed = try? PixelFilter.trimmed(full, placed: canvas),

@@ -67,7 +67,7 @@ extension EditorSession {
         // but Color Burn and Color Dodge need to read what they are blending with, which a group hides.
         let composite = try BrushRaster.context(width: Int(region.width), height: Int(region.height), mask: false)
         composite.translateBy(x: -region.minX, y: -region.minY)
-        drawLiveComposite(document, in: composite)
+        guard drawLiveComposite(document, in: composite) else { throw ExportError.render }
         guard let merged = composite.makeImage() else { throw ExportError.render }
         let context = try BrushRaster.context(width: Int(region.width), height: Int(region.height), mask: false)
         context.translateBy(x: -region.minX, y: -region.minY)
