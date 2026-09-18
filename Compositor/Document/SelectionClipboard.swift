@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 
 /// Pixels copied from the canvas, with where they came from so Paste can put them back in place.
 struct PixelClipboard {
@@ -115,22 +116,26 @@ extension EditorSession {
     var canPaste: Bool {
         guard document != nil, canEditLayers else { return false }
         if let pixelClipboard, NSPasteboard.general.changeCount == pixelClipboard.changeCount { return true }
-        return NSPasteboard.general.canReadObject(forClasses: [NSImage.self], options: nil)
+        return NSPasteboard.general.availableType(from: [.png, .tiff]) != nil
     }
 
     /// Cmd-V: pastes as a new layer above the active one. Pixels copied here go back exactly
     /// where they came from; images copied in other apps are centered.
     func paste() {
         guard canPaste, let document else { return }
+        guard document.layers.count < 10_000 else { brushError = ProjectError.tooLarge.localizedDescription; return }
         let pasteboard = NSPasteboard.general
         if let clip = pixelClipboard, pasteboard.changeCount == clip.changeCount {
             addPixelLayer(clip.image, at: clip.origin, name: nextLayerName(), editName: "Paste")
-        } else if let external = NSImage(pasteboard: pasteboard)?.cgImage(forProposedRect: nil, context: nil, hints: nil),
-                  let image = try? Self.sRGBCopy(of: external) {
-            let origin = CGPoint(x: floor((document.size.width - CGFloat(image.width)) / 2),
-                                 y: floor((document.size.height - CGFloat(image.height)) / 2))
-            addPixelLayer(image, at: origin, name: nextLayerName(), editName: "Paste")
-        } else { NSSound.beep() }
+        } else {
+            do {
+                guard let type = pasteboard.availableType(from: [.png, .tiff]), let data = pasteboard.data(forType: type) else { NSSound.beep(); return }
+                let image = try Self.decodeClipboardImage(data, remainingPixels: remainingPixelLayerBudget)
+                let origin = CGPoint(x: floor((document.size.width - CGFloat(image.width)) / 2),
+                                     y: floor((document.size.height - CGFloat(image.height)) / 2))
+                addPixelLayer(image, at: origin, name: nextLayerName(), editName: "Paste")
+            } catch { brushError = error.localizedDescription }
+        }
     }
 
     /// Cmd-J (Layer via Copy): the selection's pixels become a new layer in place; with no
@@ -147,6 +152,10 @@ extension EditorSession {
     func duplicateActiveLayer() {
         guard canEditLayers, let layer = activeLayer, !layer.isGroup,
               let index = document?.layers.firstIndex(where: { $0.id == layer.id }) else { return }
+        do {
+            if let image = layer.asset?.image { try admitPixelLayer(width: image.width, height: image.height) }
+            else if (document?.layers.count ?? 0) >= 10_000 { throw ProjectError.tooLarge }
+        } catch { brushError = error.localizedDescription; return }
         let copy = ImageLayer(id: UUID(), asset: layer.asset, name: "\(layer.name) copy", isVisible: layer.isVisible,
                               transform: layer.transform, parentID: layer.parentID, isGroup: false,
                               opacity: layer.opacity, blendMode: layer.blendMode, mask: layer.mask, maskSourceID: layer.maskSourceID, adjustment: layer.adjustment, shape: layer.shape)
@@ -173,7 +182,10 @@ extension EditorSession {
     /// Inserts pixels as a new layer above the active one (inside its folder), all in one undo
     /// step. Pasting drops the selection, as in Photoshop; a drawn shape keeps it.
     func addPixelLayer(_ image: CGImage, at origin: CGPoint, name: String, editName: String, dropsSelection: Bool = true, shape: LayerShape? = nil) {
-        guard let document, let thumbnail = try? PixelInvert.thumbnail(of: image) else { return }
+        guard let document else { return }
+        do { try admitPixelLayer(width: image.width, height: image.height) }
+        catch { brushError = error.localizedDescription; return }
+        guard let thumbnail = try? PixelInvert.thumbnail(of: image) else { return }
         var layer = ImageLayer(asset: ImportedImage(image: image, thumbnail: thumbnail, name: name), origin: origin)
         layer.name = name
         layer.shape = shape
@@ -192,6 +204,40 @@ extension EditorSession {
         var number = 1
         while names.contains("Layer \(number)") { number += 1 }
         return "Layer \(number)"
+    }
+
+    var remainingPixelLayerBudget: Int {
+        max(0, 100_000_000 - (document?.layers.reduce(0) { total, layer in
+            total + (layer.asset.map { $0.image.width * $0.image.height } ?? 0)
+        } ?? 0))
+    }
+
+    func admitPixelLayer(width: Int, height: Int) throws {
+        guard let document, document.layers.count < 10_000 else { throw ProjectError.tooLarge }
+        try Self.checkClipboardDimensions(width: width, height: height, remainingPixels: remainingPixelLayerBudget)
+    }
+
+    static func checkClipboardDimensions(width: Int, height: Int, remainingPixels: Int) throws {
+        guard (1...30_000).contains(width), (1...30_000).contains(height),
+              remainingPixels >= 0, width <= remainingPixels / height else { throw ImageImportError.tooLarge }
+    }
+
+    static func decodeClipboardImage(_ data: Data, remainingPixels: Int) throws -> CGImage {
+        guard data.count <= 512 * 1024 * 1024 else { throw ImageImportError.tooLarge }
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int else { throw ImageImportError.unreadable }
+        try checkClipboardDimensions(width: width, height: height, remainingPixels: remainingPixels)
+        // Decode one representation only, respecting EXIF orientation without an unbounded NSImage fallback.
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: max(width, height),
+            kCGImageSourceShouldCacheImmediately: true
+        ] as CFDictionary) else { throw ImageImportError.unreadable }
+        try checkClipboardDimensions(width: image.width, height: image.height, remainingPixels: remainingPixels)
+        return try sRGBCopy(of: image)
     }
 
     /// Normalizes an image from another app to the working sRGB RGBA format.
