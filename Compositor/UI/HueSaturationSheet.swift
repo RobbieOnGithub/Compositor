@@ -137,7 +137,7 @@ struct SpectrumEditor: View {
             spectrum(after: false)
             handles
             spectrum(after: true)
-            Text(settings.band.handles.map { "\(Int($0.rounded()))°" }.joined(separator: "   "))
+            Text(settings.band.handles.map { "\(NumericLabel.whole($0))°" }.joined(separator: "   "))
                 .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
         }
     }
@@ -162,7 +162,7 @@ struct SpectrumEditor: View {
             let width = geometry.size.width
             Canvas { context, size in
                 for (index, degrees) in settings.band.handles.enumerated() {
-                    let x = CGFloat(degrees / 360) * width
+                    let x = CGFloat(HueBand.displayDegrees(degrees) / 360) * width
                     let isInner = index == 1 || index == 2
                     let rect = isInner ? CGRect(x: x - 1, y: 0, width: 2, height: size.height)
                                        : CGRect(x: x - 3.5, y: size.height / 2 - 2.5, width: 7, height: 5)

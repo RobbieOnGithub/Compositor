@@ -31,7 +31,7 @@ nonisolated struct HueBand: Equatable, Sendable, Codable {
 
     /// Degrees from `from` forward to `to`, always 0…360.
     static func forward(_ from: Double, _ to: Double) -> Double {
-        let delta = (to - from).truncatingRemainder(dividingBy: 360)
+        let delta = (to.truncatingRemainder(dividingBy: 360) - from.truncatingRemainder(dividingBy: 360)).truncatingRemainder(dividingBy: 360)
         return delta < 0 ? delta + 360 : delta
     }
 
@@ -48,6 +48,14 @@ nonisolated struct HueBand: Equatable, Sendable, Codable {
         if position <= plateauEnd { return 1 }
         let rampOut = span - plateauEnd
         return rampOut > 0 ? (span - position) / rampOut : 1
+    }
+
+    /// Keep the 360-degree endpoint while wrapping persisted multi-turn handles for display.
+    static func displayDegrees(_ value: Double) -> Double {
+        guard value.isFinite else { return 0 }
+        if (0...360).contains(value) { return value }
+        let remainder = value.truncatingRemainder(dividingBy: 360)
+        return remainder < 0 ? remainder + 360 : remainder
     }
 
     var handles: [Double] { [falloffStart, rangeStart, rangeEnd, falloffEnd] }
