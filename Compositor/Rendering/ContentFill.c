@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <float.h>
+#include <limits.h>
 
 static uint32_t next_random(uint32_t *state) {
     *state = *state * 1664525u + 1013904223u;
@@ -21,6 +22,10 @@ static double match(const uint8_t *pixels, size_t stride, const uint8_t *known,
     return count ? sum/count : DBL_MAX;
 }
 int content_fill(uint8_t *pixels, size_t stride, const uint8_t *mask, size_t ms, int w, int h) {
+    // This routine uses signed pixel indexes. Reject before allocation or reading inputs.
+    if (!pixels || !mask || w <= 0 || h <= 0 || w > 30000 || h > 30000 ||
+        (size_t)w > 100000000u / (size_t)h || stride < (size_t)w * 4 || ms < (size_t)w ||
+        stride > SIZE_MAX / (size_t)h || ms > SIZE_MAX / (size_t)h) return -1;
     size_t n=(size_t)w*h;
     uint8_t *known=calloc(n,1), *target=calloc(n,1), *valid=calloc(n,1), *queued=calloc(n,1);
     int *donors=malloc(n*sizeof(int)), *queue=malloc(n*sizeof(int)), *chosen=malloc(n*sizeof(int));
@@ -64,7 +69,10 @@ int content_fill(uint8_t *pixels, size_t stride, const uint8_t *mask, size_t ms,
             int q=-1;
             if(k<4) {
                 int t=neighbors[k];
-                if(t>=0) q=(chosen[t]>=0?chosen[t]:t)+(p-t);
+                if(t>=0) {
+                    int64_t candidate=(int64_t)(chosen[t]>=0?chosen[t]:t)+(int64_t)p-t;
+                    if(candidate>=0 && candidate<(int64_t)n) q=(int)candidate;
+                }
             } else q=donors[next_random(&seed)%donorCount];
             if(q<0||(size_t)q>=n||!valid[q]) continue;
             double s=match(pixels,stride,known,w,h,p,q,radius);
