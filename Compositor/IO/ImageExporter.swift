@@ -17,7 +17,7 @@ nonisolated enum ExportError: LocalizedError {
 actor ImageExporter {
     static let shared = ImageExporter()
 
-    func render(_ snapshot: ProjectSnapshot) throws -> ExportRaster {
+    func render(_ snapshot: ProjectSnapshot, maximumLiveMaskBytes: Int = 1024 * 1024 * 1024) throws -> ExportRaster {
         let width = snapshot.manifest.width, height = snapshot.manifest.height
         guard (1...30_000).contains(width), (1...30_000).contains(height),
               width * height <= 100_000_000 else { throw ExportError.tooLarge }
@@ -37,7 +37,7 @@ actor ImageExporter {
                       layer.maskFile == nil || snapshot.masks[layer.id] != nil else { throw ProjectError.missingImage }
             }
             try LiveMaskGraph.validate(snapshot.manifest.layers)
-            let live = LiveMaskRenderer(bounds: CGRect(x: 0, y: 0, width: width, height: height), source: { records[$0]?.maskSourceID }) { id, target in
+            let live = LiveMaskRenderer(bounds: CGRect(x: 0, y: 0, width: width, height: height), source: { records[$0]?.maskSourceID }, maximumWorkingBytes: maximumLiveMaskBytes) { id, target in
                 guard let layer = records[id], let image = snapshot.images[id]?.image else { return }
                 let mask = snapshot.mask(for: layer).flatMap { $0.clipImage(placement: $0.placement, over: layer.transform, width: image.width, height: image.height) }
                 func drawLayer(_ mode: LayerBlendMode, _ into: CGContext) {
@@ -62,6 +62,7 @@ actor ImageExporter {
                 let clip = FolderMaskClip(image: image, transform: folder.transform)
                 return { clip.apply(center: folder.transform.center, in: $0) }
             }, in: context) { live.drawComposite($0, in: context) }
+            guard !live.failed else { throw ExportError.render }
             guard let image = context.makeImage() else { throw ExportError.render }
             return ExportRaster(image: image, resolution: snapshot.manifest.resolution ?? 72)
         }

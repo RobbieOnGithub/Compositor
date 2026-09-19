@@ -92,6 +92,7 @@ nonisolated enum LiveMaskBaker {
             }
         }
         live.draw(target, in: context)
+        guard !live.failed else { throw ExportError.render }
         guard let image = context.makeImage() else { throw ExportError.render }
         return ImportedImage(image: image, thumbnail: try PixelAdjust.thumbnail(of: image), name: original.name)
     }
@@ -156,10 +157,12 @@ extension EditorSession {
 
 
 extension EditorSession {
-    func drawLiveComposite(_ document: CanvasDocument, in context: CGContext, onSurface: Bool = false) {
+    @discardableResult
+    func drawLiveComposite(_ document: CanvasDocument, in context: CGContext, onSurface: Bool = false) -> Bool {
         if !onSurface, document.layers.contains(where: { $0.adjustment != nil }) {
-            AdjustmentSurface.draw(in: context) { self.drawLiveComposite(document, in: $0, onSurface: true) }
-            return
+            var succeeded = false
+            AdjustmentSurface.draw(in: context) { succeeded = self.drawLiveComposite(document, in: $0, onSurface: true) }
+            return succeeded
         }
         let records = Dictionary(uniqueKeysWithValues: document.layers.map { ($0.id, $0) })
         let live = LiveMaskRenderer(bounds: context.boundingBoxOfClipPath, source: { records[$0]?.maskSourceID }) { id, ctx in
@@ -189,6 +192,12 @@ extension EditorSession {
             let clip = FolderMaskClip(image: image, transform: transform)
             return { clip.apply(center: transform.center, in: $0) }
         }, in: context) { live.drawComposite($0, in: context) }
+        if live.failed {
+            context.clear(context.boundingBoxOfClipPath)
+            brushError = ExportError.render.localizedDescription
+            return false
+        }
+        return true
     }
 }
 

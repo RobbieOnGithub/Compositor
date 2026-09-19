@@ -39,7 +39,7 @@ extension EditorSession {
     func cloneSample(_ document: CanvasDocument) -> CGImage? {
         guard let context = try? BrushRaster.context(width: document.width, height: document.height, mask: false) else { return nil }
         if cloneSettings.sampleAllLayers {
-            drawLiveComposite(document, in: context)
+            guard drawLiveComposite(document, in: context) else { return nil }
         } else if let layer = activeLayer, let image = layer.asset?.image {
             let transform = displayedTransform(for: layer)
             LayerRenderer.draw(image, transform: transform, center: transform.center, in: context)

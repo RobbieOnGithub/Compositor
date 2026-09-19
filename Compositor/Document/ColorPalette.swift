@@ -106,7 +106,7 @@ extension EditorSession {
             context.translateBy(x: 0, y: 1)
             context.scaleBy(x: 1, y: -1)
             context.translateBy(x: -point.x.rounded(.down), y: -point.y.rounded(.down))
-        drawLiveComposite(document, in: context)
+        guard drawLiveComposite(document, in: context) else { return false }
 
             return true
         }

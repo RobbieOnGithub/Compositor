@@ -825,6 +825,7 @@ final class CanvasView: NSView {
             let origin = center(transform.center)
             return { clip.apply(scale: scale, center: origin, in: $0) }
         }, in: context) { live.drawComposite($0, in: context) }
+        if live.failed { context.clear(context.boundingBoxOfClipPath) }
     }
 
     /// The raster edit painting this folder's mask, if one is in progress.
