@@ -8,6 +8,9 @@ nonisolated enum ContentFill {
     static func run(_ job: FilterJob) throws -> CGImage {
         guard let selection = job.selection else { throw Failure.noSource }
         let w=job.image.width, h=job.image.height
+        guard (1...30_000).contains(w), (1...30_000).contains(h), w <= 100_000_000 / h else {
+            throw ProjectError.tooLarge
+        }
         let pixels = try BrushRaster.context(width: w, height: h, mask: false)
         let mask = try BrushRaster.context(width: w, height: h, mask: true)
         let rect = CGRect(x: 0, y: 0, width: w, height: h)
