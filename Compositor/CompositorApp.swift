@@ -95,6 +95,36 @@ struct CompositorApp: App {
                         Toggle("Show Transform Controls", isOn: Binding(get: { session.showsTransformControls },
                                                                           set: { session.showsTransformControls = $0 }))
                             .keyboardShortcut("h").disabled(session.tool != .move || session.document == nil)
+                        Group {
+                            Divider()
+                            Menu("Show") {
+                                Toggle("Grid", isOn: Binding(get: { session.showsGrid }, set: { session.showsGrid = $0 }))
+                                    .keyboardShortcut("'").disabled(session.document == nil)
+                                Toggle("Guides", isOn: Binding(get: { session.showsGuides }, set: { session.showsGuides = $0 }))
+                                    .keyboardShortcut(";").disabled(session.document == nil)
+                            }
+                            Toggle("Rulers", isOn: Binding(get: { session.showsRulers }, set: { session.showsRulers = $0 }))
+                                .keyboardShortcut("r").disabled(session.document == nil)
+                            Divider()
+                            Toggle("Snap", isOn: Binding(get: { session.snapEnabled }, set: { session.snapEnabled = $0 }))
+                                .keyboardShortcut(";", modifiers: [.command, .shift]).disabled(session.document == nil)
+                            Menu("Snap To") {
+                                Toggle("Guides", isOn: Binding(get: { session.snapToGuides }, set: { session.snapToGuides = $0 }))
+                                    .disabled(session.document == nil)
+                                Toggle("Grid", isOn: Binding(get: { session.snapToGrid }, set: { session.snapToGrid = $0 }))
+                                    .disabled(session.document == nil)
+                                Toggle("Layers", isOn: Binding(get: { session.snapToLayers }, set: { session.snapToLayers = $0 }))
+                                    .disabled(session.document == nil)
+                                Toggle("Document Bounds", isOn: Binding(get: { session.snapToDocumentBounds },
+                                                                        set: { session.snapToDocumentBounds = $0 }))
+                                    .disabled(session.document == nil)
+                            }
+                            Divider()
+                            Toggle("Lock Guides", isOn: Binding(get: { session.locksGuides }, set: { session.locksGuides = $0 }))
+                                .keyboardShortcut(";", modifiers: [.command, .option]).disabled(session.document == nil)
+                            Button("Clear Guides") { session.clearGuides() }
+                                .disabled(!session.canClearGuides)
+                        }
                     }
                     // ⌘H toggles the Move tool's transform controls instead of hiding the app, so Hide keeps its
                     // place in the app menu without the shortcut.

@@ -16,7 +16,8 @@ actor ImageResizer {
               options.resolution.isFinite, (1...9600).contains(options.resolution) else { throw ProjectError.tooLarge }
         let old = snapshot.manifest
         var manifest = ProjectManifest(resolution: options.resolution, documentID: old.documentID,
-            width: options.width, height: options.height, activeLayerID: old.activeLayerID, layers: [])
+            width: options.width, height: options.height, activeLayerID: old.activeLayerID, layers: [],
+            guides: old.guides)
         if old.width == options.width && old.height == options.height {
             manifest.layers = old.layers
             return ProjectSnapshot(manifest: manifest, images: snapshot.images, masks: snapshot.masks)
@@ -24,6 +25,7 @@ actor ImageResizer {
         guard options.width * options.height <= 100_000_000 else { throw ProjectError.tooLarge }
         let sx = CGFloat(options.width) / CGFloat(old.width)
         let sy = CGFloat(options.height) / CGFloat(old.height)
+        manifest.guides = old.guides?.map { $0.scaled(x: sx, y: sy) }
         var images: [UUID: ImportedImage] = [:]
         var masks: [UUID: ImportedImage] = [:]
         var usedPixels = 0, usedMaskPixels = 0
@@ -110,7 +112,7 @@ extension EditorSession {
         let m = snapshot.manifest
         document = CanvasDocument(id: m.documentID, width: m.width, height: m.height,
             layers: m.layers.map { ImageLayer(id: $0.id, asset: snapshot.images[$0.id], name: $0.name,
-                isVisible: $0.isVisible, transform: $0.transform, parentID: $0.parentID, isGroup: $0.isGroup == true, opacity: $0.opacity ?? 1, blendMode: $0.blendMode ?? .normal, mask: snapshot.mask(for: $0), maskSourceID: $0.maskSourceID, adjustment: $0.adjustment) }, resolution: m.resolution ?? 72)
+                isVisible: $0.isVisible, transform: $0.transform, parentID: $0.parentID, isGroup: $0.isGroup == true, opacity: $0.opacity ?? 1, blendMode: $0.blendMode ?? .normal, mask: snapshot.mask(for: $0), maskSourceID: $0.maskSourceID, adjustment: $0.adjustment) }, resolution: m.resolution ?? 72, guides: m.guides ?? [])
         endEdit()
         viewport.fit(documentSize: document!.size)
     }

@@ -112,21 +112,9 @@ nonisolated struct CropSnap {
 }
 
 extension EditorSession {
-    /// What a moving layer snaps to: the canvas edges and center, and every other visible layer's upright bounds
-    /// and center. The layers being moved are left out, or they would snap to where they already are.
+    /// What a moving layer snaps to: View > Snap To targets, including the canvas and other layers by default.
     func transformSnapTargets(excluding moving: Set<UUID>) -> (xs: [CGFloat], ys: [CGFloat]) {
-        guard let document else { return ([], []) }
-        var xs: [CGFloat] = [0, document.size.width / 2, document.size.width]
-        var ys: [CGFloat] = [0, document.size.height / 2, document.size.height]
-        for layer in document.renderLayers where layer.asset != nil && !moving.contains(layer.id) {
-            let corners = DistortWarp.corners(of: displayedTransform(for: layer))
-            let cornerXs = corners.map(\.x), cornerYs = corners.map(\.y)
-            guard let minX = cornerXs.min(), let maxX = cornerXs.max(),
-                  let minY = cornerYs.min(), let maxY = cornerYs.max() else { continue }
-            xs += [minX.rounded(), ((minX + maxX) / 2).rounded(), maxX.rounded()]
-            ys += [minY.rounded(), ((minY + maxY) / 2).rounded(), maxY.rounded()]
-        }
-        return (xs, ys)
+        alignmentSnapTargets(excluding: moving, includeCenters: true)
     }
 
     /// `draft` nudged so the layer it places lines up with a nearby edge or center; `moving` is what is being
@@ -147,19 +135,9 @@ extension EditorSession {
         return snapped
     }
 
-    /// What crop edges snap to: the canvas edges and every visible layer's bounds (a rotated layer's
-    /// upright bounding box), in whole document pixels.
+    /// What crop edges snap to: View > Snap To targets, without layer/canvas centers.
     func cropSnapTargets() -> (xs: [CGFloat], ys: [CGFloat]) {
-        guard let document else { return ([], []) }
-        var xs: [CGFloat] = [0, document.size.width], ys: [CGFloat] = [0, document.size.height]
-        for layer in document.renderLayers where layer.asset != nil {
-            let corners = DistortWarp.corners(of: displayedTransform(for: layer))
-            let cornerXs = corners.map(\.x), cornerYs = corners.map(\.y)
-            guard let minX = cornerXs.min(), let maxX = cornerXs.max(), let minY = cornerYs.min(), let maxY = cornerYs.max() else { continue }
-            xs += [minX.rounded(), maxX.rounded()]
-            ys += [minY.rounded(), maxY.rounded()]
-        }
-        return (xs, ys)
+        alignmentSnapTargets(includeCenters: false)
     }
 
     /// Keep the tool frame visible without creating an uncommitted edit.

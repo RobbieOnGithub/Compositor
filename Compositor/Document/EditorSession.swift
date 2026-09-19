@@ -59,15 +59,18 @@ struct CanvasDocument: Equatable {
     let height: Int
     var resolution: Double = 72
     var layers: [ImageLayer] = [] // Bottom to top.
+    /// User-placed alignment lines. Saved with the project; undo covers them.
+    var guides: [CanvasGuide] = []
     /// Part of the document so undo/redo covers selection changes. Not saved to disk.
     var selection: DocumentSelection?
     var size: CGSize { CGSize(width: width, height: height) }
-    init(id: UUID = UUID(), width: Int, height: Int, layers: [ImageLayer] = [], resolution: Double = 72) {
+    init(id: UUID = UUID(), width: Int, height: Int, layers: [ImageLayer] = [], resolution: Double = 72, guides: [CanvasGuide] = []) {
         self.id = id
         self.width = width
         self.height = height
         self.layers = layers
         self.resolution = resolution
+        self.guides = guides
     }
 
     // Geometry limit; raster memory limits will be established with image import.
@@ -230,6 +233,19 @@ final class EditorSession {
     var selectionAntialiased = true
     var wandSettings = WandSettings()
     var showsPixelGrid = true
+    /// Layout grid (View > Show > Grid). Off until turned on; independent of the 800% pixel grid.
+    var showsGrid = false
+    /// User guides. Hidden extras do not snap.
+    var showsGuides = true
+    var showsRulers = false
+    /// Master snap switch (View > Snap). On so today's layer/canvas snap keeps working.
+    var snapEnabled = true
+    var snapToGuides = true
+    var snapToGrid = false
+    var snapToLayers = true
+    var snapToDocumentBounds = true
+    var locksGuides = false
+    var guideDrag: GuideDrag?
     /// Pixels the Expand / Contract buttons grow or shrink the selection by.
     var selectionExpandAmount = 1
     var selectionContractAmount = 1

@@ -9,7 +9,7 @@ extension UTType {
 
 nonisolated struct ProjectManifest: Codable, Sendable {
     var format = "com.compositor.project"
-    var version = 7
+    var version = 8
     var colorSpace = "sRGB"
     var resolution: Double? = nil // Older version-1 projects default to 72 pixels/inch.
     let documentID: UUID
@@ -17,6 +17,8 @@ nonisolated struct ProjectManifest: Codable, Sendable {
     let height: Int
     let activeLayerID: UUID?
     var layers: [ProjectLayerRecord]
+    /// Alignment guides. Missing on versions 1–7.
+    var guides: [CanvasGuide]? = nil
 }
 
 nonisolated struct ProjectLayerRecord: Codable, Sendable {
@@ -52,7 +54,7 @@ nonisolated enum ProjectError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalid: "This is not a valid Compositor project, or its metadata is damaged."
-        case .version(let version): "This project uses format version \(version). This app supports versions 1–7."
+        case .version(let version): "This project uses format version \(version). This app supports versions 1–8."
         case .missingImage: "An image inside the project is missing or damaged. The current document has not been replaced."
         case .tooLarge: "This project exceeds the supported canvas, layer, file-size, or 100-megapixel image limit."
         case .encode: "An image could not be saved. The previous project has not been replaced."
@@ -132,7 +134,7 @@ actor ProjectStore {
         do { header = try JSONDecoder().decode(Header.self, from: metadata) }
         catch { throw ProjectError.invalid }
         guard header.format == "com.compositor.project" else { throw ProjectError.invalid }
-        guard (1...7).contains(header.version) else { throw ProjectError.version(header.version) }
+        guard (1...8).contains(header.version) else { throw ProjectError.version(header.version) }
         do { manifest = try JSONDecoder().decode(ProjectManifest.self, from: metadata) }
         catch { throw ProjectError.invalid }
         try validate(manifest)
@@ -172,7 +174,7 @@ actor ProjectStore {
 
     private func validate(_ manifest: ProjectManifest) throws {
         guard manifest.format == "com.compositor.project" else { throw ProjectError.invalid }
-        guard (1...7).contains(manifest.version) else { throw ProjectError.version(manifest.version) }
+        guard (1...8).contains(manifest.version) else { throw ProjectError.version(manifest.version) }
         guard manifest.colorSpace == "sRGB" else { throw ProjectError.invalid }
         if let resolution = manifest.resolution {
             guard resolution.isFinite, (1...9600).contains(resolution) else { throw ProjectError.invalid }
@@ -206,6 +208,22 @@ actor ProjectStore {
                   layer.imageFile == nil || layer.imageFile == "\(layer.id.uuidString).png" else { throw ProjectError.invalid }
         }
         if let id = manifest.activeLayerID, !ids.contains(id) { throw ProjectError.invalid }
+        try validateGuides(manifest)
+    }
+
+    private func validateGuides(_ manifest: ProjectManifest) throws {
+        let guides = manifest.guides ?? []
+        if manifest.version < 8 {
+            guard guides.isEmpty else { throw ProjectError.invalid }
+            return
+        }
+        guard guides.count <= 1_000 else { throw ProjectError.tooLarge }
+        var ids = Set<UUID>()
+        for guide in guides {
+            guard ids.insert(guide.id).inserted, guide.position.isFinite, abs(guide.position) <= 1_000_000 else {
+                throw ProjectError.invalid
+            }
+        }
     }
 
     private func checkSize(width: Int, height: Int, used: inout Int) throws {

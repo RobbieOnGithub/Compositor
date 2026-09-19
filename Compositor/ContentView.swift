@@ -68,11 +68,26 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 toolRail
                 Divider()
-                ZStack {
-                    EditorCanvas(session: session)
-                    if session.document == nil { welcome }
+                VStack(spacing: 0) {
+                    if session.showsRulers, session.document != nil {
+                        HStack(spacing: 0) {
+                            CanvasRulerCorner()
+                            CanvasRulerView(session: session, axis: .horizontal)
+                                .frame(height: CanvasRuler.thickness)
+                        }
+                    }
+                    HStack(spacing: 0) {
+                        if session.showsRulers, session.document != nil {
+                            CanvasRulerView(session: session, axis: .vertical)
+                                .frame(width: CanvasRuler.thickness)
+                        }
+                        ZStack {
+                            EditorCanvas(session: session)
+                            if session.document == nil { welcome }
+                        }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("editor")) } action: { canvasFrame = $0 }
+                    }
                 }
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("editor")) } action: { canvasFrame = $0 }
                 PanelResizeEdge(width: $layersPanelWidth, range: LayersPanel.widths)
                 LayersPanel(session: session, width: layersPanelWidth)
             }

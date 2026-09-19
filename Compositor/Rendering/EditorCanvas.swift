@@ -7,6 +7,10 @@ struct EditorCanvas: NSViewRepresentable {
     func updateNSView(_ view: CanvasView, context: Context) {
         view.consumeFocusRequest(session.canvasFocusRequest)
         _ = session.showsTransformControls // observed here so ⌘H redraws the transform box at once
+        _ = session.showsGrid
+        _ = session.showsGuides
+        _ = session.guideDrag
+        _ = session.document?.guides
         view.synchronizeDisplay()
         view.window?.isDocumentEdited = session.isModified
     }
@@ -48,6 +52,9 @@ final class CanvasView: NSView {
     private weak var cursorLockWindow: NSWindow?
     private var cropDrag: CropDrag? {
         didSet { if cropDrag == nil { releaseDragCursor() } }
+    }
+    private var guideDragging = false {
+        didSet { if !guideDragging { releaseDragCursor() } }
     }
     private let transformOverlay: TransformOverlay
     private var displayedState: DisplayState?
@@ -486,7 +493,16 @@ final class CanvasView: NSView {
         _ = session.activeLayerID
         _ = session.cropRect
         transformOverlay.needsDisplay = true
+        redrawRulers()
         return changed
+    }
+
+    private func redrawRulers() {
+        func find(_ view: NSView) {
+            if view is CanvasRulerNSView { view.needsDisplay = true }
+            view.subviews.forEach(find)
+        }
+        window?.contentView.map(find)
     }
 
     init(session: EditorSession) {
@@ -1083,25 +1099,28 @@ final class CanvasView: NSView {
     }
 
     /// The Move tool's cursor at a view point. Option over anything a drag would move shows the
-    /// copy cursor, since Option-dragging duplicates the layer.
+    /// copy cursor, since Option-dragging duplicates the layer. Guides sit under handles, over a layer drag.
     private func transformCursor(at point: CGPoint, flags: NSEvent.ModifierFlags = NSEvent.modifierFlags) -> NSCursor {
         if let dragCursor { return dragCursor }
         guard !spaceHeld else { return .openHand }
         guard !session.isProjectBusy, !session.isImporting else { return .arrow }
         let duplicate = flags.contains(.option)
-        guard let geometry = transformOverlay.geometry, let hit = geometry.hit(point) else {
-            guard pressMovesLayer(at: point, flags: flags) else { return .arrow }
-            return duplicate ? Self.duplicateCursor : Self.moveCursor
+        if let geometry = transformOverlay.geometry, let hit = geometry.hit(point) {
+            switch hit {
+            case .resize(let index):
+                // Distorting (Cmd held, or already distorted) moves corners freely: the white arrow says so.
+                let distorting = session.transformEdit?.corners != nil || flags.contains(.command)
+                return distorting ? Self.distortCursor : geometry.resizeCursor(for: index)
+            case .rotate: return Self.rotationCursor
+            case .move: return duplicate ? Self.duplicateCursor : Self.moveCursor
+            case .distort: return Self.distortCursor
+            }
         }
-        switch hit {
-        case .resize(let index):
-            // Distorting (Cmd held, or already distorted) moves corners freely: the white arrow says so.
-            let distorting = session.transformEdit?.corners != nil || flags.contains(.command)
-            return distorting ? Self.distortCursor : geometry.resizeCursor(for: index)
-        case .rotate: return Self.rotationCursor
-        case .move: return duplicate ? Self.duplicateCursor : Self.moveCursor
-        case .distort: return Self.distortCursor
+        if let guide = session.hitGuide(at: point) {
+            return guide.axis == .vertical ? .resizeLeftRight : .resizeUpDown
         }
+        guard pressMovesLayer(at: point, flags: flags) else { return .arrow }
+        return duplicate ? Self.duplicateCursor : Self.moveCursor
     }
 
     /// Whether a press that misses the transform handles would drag a layer (see `transformPressLayer`).
@@ -1230,6 +1249,7 @@ final class CanvasView: NSView {
         } else if session.tool == .crop {
             beginCropDrag(at: point)
         } else if session.tool == .move {
+            if beginGuideDrag(at: point) { return }
             beginTransformDrag(at: point, modifiers: event.modifierFlags)
         } else if session.tool == .zoom {
             zoomDrag = (point, session.viewport.zoom, false)
@@ -1319,6 +1339,14 @@ final class CanvasView: NSView {
             synchronizeDisplay()
             return
         }
+        if guideDragging, let drag = session.guideDrag, let document = session.document {
+            dragCursor?.set()
+            let pixel = session.viewport.documentPoint(from: point, documentSize: document.size)
+            session.moveGuideDrag(to: Double(drag.axis == .vertical ? pixel.x : pixel.y))
+            synchronizeDisplay()
+            dragCursor?.set()
+            return
+        }
         if let drag = cropDrag, session.tool == .crop, !session.isProjectBusy, let document = session.document {
             dragCursor?.set()
             dragCrop(drag, to: point, flags: event.modifierFlags, documentSize: document.size)
@@ -1358,6 +1386,7 @@ final class CanvasView: NSView {
         guard let last = lastDragPoint else { return }
         session.viewport.translate(by: CGSize(width: point.x - last.x, height: point.y - last.y))
         lastDragPoint = point
+        redrawRulers()
     }
     override func mouseUp(with event: NSEvent) {
         stopMarqueeAutoscroll()
@@ -1369,6 +1398,10 @@ final class CanvasView: NSView {
             return
         }
         session.snapGuides = ([], [])
+        if guideDragging {
+            session.finishGuideDrag(delete: isOverRuler(convert(event.locationInWindow, from: nil)))
+            guideDragging = false
+        }
         if samplingColor {
             samplingColor = false
             sampleRing.isHidden = true
@@ -1430,7 +1463,7 @@ final class CanvasView: NSView {
         window?.invalidateCursorRects(for: self)
     }
     override func scrollWheel(with event: NSEvent) {
-        guard transformDrag == nil, cropDrag == nil, session.brushStroke == nil, session.warpStroke == nil else { return }
+        guard transformDrag == nil, cropDrag == nil, !guideDragging, session.brushStroke == nil, session.warpStroke == nil else { return }
         guard session.document != nil else { return }
         if event.modifierFlags.contains(.command) || event.modifierFlags.contains(.option) {
             session.zoom(to: session.viewport.zoom * exp(-event.scrollingDeltaY * 0.015),
@@ -1439,10 +1472,11 @@ final class CanvasView: NSView {
             let multiplier: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 12
             session.viewport.translate(by: CGSize(width: event.scrollingDeltaX * multiplier,
                                                   height: event.scrollingDeltaY * multiplier))
+            redrawRulers()
         }
     }
     override func magnify(with event: NSEvent) {
-        guard transformDrag == nil, cropDrag == nil, session.brushStroke == nil, session.warpStroke == nil else { return }
+        guard transformDrag == nil, cropDrag == nil, !guideDragging, session.brushStroke == nil, session.warpStroke == nil else { return }
         session.zoom(to: session.viewport.zoom * (1 + event.magnification),
                      anchor: convert(event.locationInWindow, from: nil))
     }
@@ -1487,6 +1521,9 @@ final class CanvasView: NSView {
         } else if session.tool == .crop, [36, 76].contains(event.keyCode) {
             cropDrag = nil
             Task { await session.commitCrop() }
+        } else if event.keyCode == 53, session.guideDrag != nil {
+            session.cancelGuideDrag()
+            guideDragging = false
         } else if event.keyCode == 53, session.transformEdit != nil {
             transformDrag = nil
             session.cancelTransform()
@@ -1771,6 +1808,28 @@ final class CanvasView: NSView {
         if CropGeometry.valid(next) { session.cropRect = next }
     }
 
+    private func beginGuideDrag(at point: CGPoint) -> Bool {
+        guard session.canEditGuides, let guide = session.hitGuide(at: point) else { return false }
+        session.beginGuideMove(guide)
+        guideDragging = true
+        dragCursor = guide.axis == .vertical ? .resizeLeftRight : .resizeUpDown
+        cursorLockWindow = window
+        cursorLockWindow?.disableCursorRects()
+        dragCursor?.set()
+        return true
+    }
+
+    /// Released on the top or left ruler strip, which sits just outside the canvas.
+    func isOverRuler(_ point: CGPoint) -> Bool {
+        session.showsRulers && (point.x < 0 || point.y < 0)
+    }
+
+    func documentPosition(axis: CanvasGuide.Axis, at point: CGPoint) -> Double? {
+        guard let document = session.document else { return nil }
+        let pixel = session.viewport.documentPoint(from: point, documentSize: document.size)
+        return Double(axis == .vertical ? pixel.x : pixel.y)
+    }
+
     private func beginTransformDrag(at point: CGPoint, modifiers: NSEvent.ModifierFlags) {
         guard session.canEditLayers || session.transformEdit != nil, let document = session.document else { return }
         let pixel = session.viewport.documentPoint(from: point, documentSize: document.size)
@@ -1802,7 +1861,7 @@ final class CanvasView: NSView {
     }
 
     private func releaseDragCursor() {
-        guard transformDrag == nil, cropDrag == nil, dragCursor != nil else { return }
+        guard transformDrag == nil, cropDrag == nil, !guideDragging, dragCursor != nil else { return }
         dragCursor = nil
         cursorLockWindow?.enableCursorRects()
         cursorLockWindow?.invalidateCursorRects(for: self)
