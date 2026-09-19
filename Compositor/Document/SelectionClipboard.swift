@@ -190,8 +190,8 @@ extension EditorSession {
     func nextLayerName() -> String {
         let names = Set(document?.layers.map(\.name) ?? [])
         var number = 1
-        while names.contains("Layer \(number)") { number += 1 }
-        return "Layer \(number)"
+        while names.contains(L10n.format("Layer %lld", number)) { number += 1 }
+        return L10n.format("Layer %lld", number)
     }
 
     /// Normalizes an image from another app to the working sRGB RGBA format.

@@ -38,9 +38,9 @@ struct CompositorApp: App {
                         }
                             .keyboardShortcut("z", modifiers: [.command, .shift])
                     } else {
-                        Button(session.history.canUndo ? "Undo \(session.history.undoName)" : "Undo") { session.undo() }
+                        Button(session.history.canUndo ? L10n.format("Undo %@", L10n.text(session.history.undoName)) : L10n.text("Undo")) { session.undo() }
                             .keyboardShortcut("z").disabled(!session.canUndo)
-                        Button(session.history.canRedo ? "Redo \(session.history.redoName)" : "Redo") { session.redo() }
+                        Button(session.history.canRedo ? L10n.format("Redo %@", L10n.text(session.history.redoName)) : L10n.text("Redo")) { session.redo() }
                             .keyboardShortcut("z", modifiers: [.command, .shift]).disabled(!session.canRedo)
                     }
                 }
@@ -186,7 +186,7 @@ struct CompositorApp: App {
                     Button("Hue/Saturation…") { session.beginHueSaturation() }
                         .keyboardShortcut("u").disabled(!session.canAdjustColors)
                     ForEach([FilterKind.exposure, .gradientMap, .grain], id: \.self) { kind in
-                        Button("\(kind.rawValue)…") { session.beginFilter(kind) }
+                        Button("\(L10n.text(kind.rawValue))…") { session.beginFilter(kind) }
                             .disabled(!session.canAdjustColors || session.hueSaturation != nil)
                     }
                     Button(session.isMaskSelected ? "Invert Mask" : "Invert") { Task { await session.invertPixels() } }
@@ -209,7 +209,7 @@ struct CompositorApp: App {
                 }
                 CommandMenu("Filter") {
                     ForEach(FilterKind.allCases.filter { $0 != .contentAwareFill && !$0.isImageAdjustment }, id: \.self) { kind in
-                        Button("\(kind.rawValue)…") { session.beginFilter(kind) }
+                        Button("\(L10n.text(kind.rawValue))…") { session.beginFilter(kind) }
                             .disabled(!session.canAdjustColors || session.hueSaturation != nil)
                     }
                 }
