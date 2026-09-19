@@ -141,7 +141,8 @@ struct SelectionTests {
         #expect(session.displayedSelectionMode == .subtract)
         session.updateHeldSelectionKeys(shift: false, option: false)
         #expect(session.displayedSelectionMode == .replace)
-        #expect(CanvasView.lassoCursors.count == 3 && CanvasView.lassoCursors[.replace] == .crosshair)
+        #expect(CanvasView.selectionCursors[.freehandLasso]?.count == 3 &&
+                CanvasView.selectionCursors[.freehandLasso]?[.replace] == .crosshair)
     }
 
     @Test func draggingMovesTheOutlineInWholePixelsAsOneUndo() throws {

@@ -95,6 +95,20 @@ struct NativeLayerList: NSViewRepresentable {
             }
         }
 
+        /// Reorders a visible row using the same top-first order shown by the table.
+        /// Kept here so native drag/reorder callers have one small adapter over the session API.
+        @discardableResult
+        func moveLayer(_ id: UUID, to row: Int) -> Bool {
+            guard session.canEditLayers, rows.contains(where: { $0.id == id }), (0...rows.count).contains(row) else { return false }
+            if row == rows.count {
+                let parent = rows.first(where: { $0.id == id })?.parentID
+                return session.placeLayer(id, in: parent, atBottom: true)
+            }
+            let target = rows[row]
+            guard target.id != id else { return false }
+            return session.placeLayer(id, in: target.parentID, above: target.id)
+        }
+
         func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
         func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
             let identifier = NSUserInterfaceItemIdentifier("layerCell")
