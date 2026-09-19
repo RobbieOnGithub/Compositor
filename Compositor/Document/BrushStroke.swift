@@ -29,6 +29,8 @@ nonisolated struct BrushPatch: @unchecked Sendable {
 /// Shared top-left raster drawing, including coverage without color conversion.
 nonisolated enum BrushRaster {
     static func context(width: Int, height: Int, mask: Bool) throws -> CGContext {
+        // Sparse documents may exceed this area; materialized bitmaps may not.
+        guard width > 0, height > 0, width <= 100_000_000 / height else { throw ProjectError.tooLarge }
         guard let result = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
             bytesPerRow: width * (mask ? 1 : 4),
             space: mask ? CGColorSpaceCreateDeviceGray() : CGColorSpace(name: CGColorSpace.sRGB)!,
